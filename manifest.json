@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Head Knock Scroll",
+  "version": "1.0",
+  "description": "Scroll webpages using head movements detected via webcam.",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
