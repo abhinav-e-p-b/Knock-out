@@ -1,0 +1,11 @@
+{
+  "name": "head-knock-scroll-extension",
+  "version": "1.0.0",
+  "description": "Chrome extension to scroll webpages by head movements (optimized build).",
+  "scripts": {
+    "build": "esbuild popup.js --minify --outfile=popup.bundle.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}

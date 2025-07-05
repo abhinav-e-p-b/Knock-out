@@ -27,6 +27,54 @@ let SCROLL_SPEED = 80;
 const CALIBRATION_FRAMES = 90; // 3 seconds at 30fps
 const SMOOTHING_FACTOR = 0.7;
 
+// === Performance/Modern APIs ===
+// Scale factor used when drawing the video onto the analysis canvas (fewer pixels, faster).
+const DETECTION_SCALE = 0.3;
+// Whether the browser supports requestVideoFrameCallback (more efficient than rAF for video).
+const hasRequestVideoFrameCallback = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+// FaceDetector API setup (if supported by the browser).
+let faceDetector = null;
+if ('FaceDetector' in window) {
+  try {
+    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+  } catch (err) {
+    console.warn('FaceDetector initialization failed:', err);
+    faceDetector = null;
+  }
+}
+
+// Optional: Web Worker for manual face detection fallback
+let detectorWorker = null;
+const pendingWorkerPromises = {};
+if (window.Worker) {
+  try {
+    detectorWorker = new Worker('detectorWorker.js');
+    detectorWorker.onmessage = (e) => {
+      const { id, faceY } = e.data;
+      if (pendingWorkerPromises[id]) {
+        pendingWorkerPromises[id](faceY);
+        delete pendingWorkerPromises[id];
+      }
+    };
+  } catch (err) {
+    console.warn('Detector worker failed to start:', err);
+    detectorWorker = null;
+  }
+}
+
+function detectFaceInWorker(imageData, width, height) {
+  return new Promise((resolve) => {
+    if (!detectorWorker) {
+      resolve(null);
+      return;
+    }
+    const id = Math.random().toString(36).slice(2);
+    pendingWorkerPromises[id] = resolve;
+    // Transfer the underlying ArrayBuffer to avoid copying costs
+    detectorWorker.postMessage({ id, width, height, buffer: imageData.data.buffer }, [imageData.data.buffer]);
+  });
+}
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initializeApp);
 
@@ -92,8 +140,8 @@ async function startTracking() {
     });
     
     // Down-sample the video frame for face detection to cut processing cost ~10x
-    canvas.width = Math.floor(video.videoWidth * 0.3);
-    canvas.height = Math.floor(video.videoHeight * 0.3);
+    canvas.width = Math.floor(video.videoWidth * DETECTION_SCALE);
+    canvas.height = Math.floor(video.videoHeight * DETECTION_SCALE);
     
     // Reset tracking state
     isTracking = true;
@@ -111,7 +159,7 @@ async function startTracking() {
     updateStatus('Calibrating... Please look straight ahead and stay still.', 'loading');
     
     // Start detection loop
-    detectMovement();
+    startDetectionLoop();
     
   } catch (error) {
     console.error('Camera error:', error);
@@ -147,16 +195,59 @@ function stopTracking() {
   updateStatus('Stopped. Click Start to begin tracking again.', 'ready');
 }
 
-function detectMovement() {
+// ----------------------------------------------------------------------------------
+// Frame processing loop helpers
+function startDetectionLoop() {
+  if (hasRequestVideoFrameCallback) {
+    video.requestVideoFrameCallback(handleVideoFrame);
+  } else {
+    // Fallback for older browsers
+    detectMovement();
+  }
+}
+
+async function handleVideoFrame() {
+  await detectMovement();
+  if (isTracking) {
+    video.requestVideoFrameCallback(handleVideoFrame);
+  }
+}
+
+async function detectMovement() {
   if (!isTracking) return;
   
   try {
-    // Draw current video frame to canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Get image data
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const faceY = detectFacePosition(imageData.data, canvas.width, canvas.height);
+    let faceY = null;
+
+    // 1) Try the built-in FaceDetector API (GPU-accelerated, very fast)
+    if (faceDetector) {
+      try {
+        const faces = await faceDetector.detect(video);
+        if (faces.length > 0) {
+          const box = faces[0].boundingBox;
+          // Convert Y position (center of box) into the same coordinate system as the analysis canvas
+          faceY = (box.y + box.height / 2) * (canvas.height / video.videoHeight);
+        }
+      } catch (detErr) {
+        console.warn('FaceDetector detect() failed – falling back to manual detection.', detErr);
+        faceY = null;
+      }
+    }
+
+    // 2) Manual pixel-based fallback (runs on the down-sampled canvas)
+    if (faceY === null) {
+      // Draw current video frame to canvas (down-sampled)
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Try worker off-thread detection first (if available)
+      faceY = await detectFaceInWorker(imageData, canvas.width, canvas.height);
+
+      // If no worker available, fallback to synchronous detection on the main thread
+      if (faceY === null && !detectorWorker) {
+        faceY = detectFacePosition(imageData.data, canvas.width, canvas.height);
+      }
+    }
     
     if (faceY !== null) {
       // Apply smoothing
@@ -232,8 +323,8 @@ function detectMovement() {
     updateStatus('Detection error. Please try again.', 'error');
   }
   
-  // Continue loop
-  if (isTracking) {
+  // Continue loop only if we are using the rAF fallback.
+  if (isTracking && !hasRequestVideoFrameCallback) {
     animationId = requestAnimationFrame(detectMovement);
   }
 }
