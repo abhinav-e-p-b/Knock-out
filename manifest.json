@@ -3,6 +3,7 @@
   "name": "Head Knock Scroll",
   "version": "1.0",
   "description": "Scroll webpages using head movements detected via webcam.",
+<<<<<<< HEAD
   "permissions": [
     "activeTab",
     "scripting",
@@ -16,3 +17,11 @@
     "extension_pages": "script-src 'self'; object-src 'self';"
   }
 }
+=======
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22

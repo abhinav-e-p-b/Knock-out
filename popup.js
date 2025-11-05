@@ -27,6 +27,57 @@ let SCROLL_SPEED = 80;
 const CALIBRATION_FRAMES = 90; // 3 seconds at 30fps
 const SMOOTHING_FACTOR = 0.7;
 
+<<<<<<< HEAD
+=======
+// === Performance/Modern APIs ===
+// Scale factor used when drawing the video onto the analysis canvas (fewer pixels, faster).
+const DETECTION_SCALE = 0.3;
+// Whether the browser supports requestVideoFrameCallback (more efficient than rAF for video).
+const hasRequestVideoFrameCallback = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+// FaceDetector API setup (if supported by the browser).
+let faceDetector = null;
+if ('FaceDetector' in window) {
+  try {
+    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+  } catch (err) {
+    console.warn('FaceDetector initialization failed:', err);
+    faceDetector = null;
+  }
+}
+
+// Optional: Web Worker for manual face detection fallback
+let detectorWorker = null;
+const pendingWorkerPromises = {};
+if (window.Worker) {
+  try {
+    detectorWorker = new Worker('detectorWorker.js');
+    detectorWorker.onmessage = (e) => {
+      const { id, faceY } = e.data;
+      if (pendingWorkerPromises[id]) {
+        pendingWorkerPromises[id](faceY);
+        delete pendingWorkerPromises[id];
+      }
+    };
+  } catch (err) {
+    console.warn('Detector worker failed to start:', err);
+    detectorWorker = null;
+  }
+}
+
+function detectFaceInWorker(imageData, width, height) {
+  return new Promise((resolve) => {
+    if (!detectorWorker) {
+      resolve(null);
+      return;
+    }
+    const id = Math.random().toString(36).slice(2);
+    pendingWorkerPromises[id] = resolve;
+    // Transfer the underlying ArrayBuffer to avoid copying costs
+    detectorWorker.postMessage({ id, width, height, buffer: imageData.data.buffer }, [imageData.data.buffer]);
+  });
+}
+
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initializeApp);
 
@@ -36,6 +87,7 @@ function initializeApp() {
     canvas = document.createElement('canvas');
     ctx = canvas.getContext('2d');
     
+<<<<<<< HEAD
     // Check if we're in a secure context
     if (!window.isSecureContext) {
       updateStatus('Error: Camera requires HTTPS. Extension must be loaded properly.', 'error');
@@ -48,6 +100,8 @@ function initializeApp() {
       return;
     }
     
+=======
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     updateStatus('Ready! Click Start to begin head tracking.', 'ready');
     startBtn.disabled = false;
     
@@ -81,6 +135,7 @@ async function startTracking() {
   try {
     updateStatus('Requesting camera access...', 'loading');
     
+<<<<<<< HEAD
     // First check if camera permissions are available
     let permissionStatus;
     try {
@@ -139,10 +194,22 @@ async function startTracking() {
     if (!streamObtained) {
       throw lastError || new Error('Failed to obtain camera stream');
     }
+=======
+    // Get camera with good settings for face detection
+    stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        width: { ideal: 640, min: 320 },
+        height: { ideal: 480, min: 240 },
+        facingMode: 'user',
+        frameRate: { ideal: 30, min: 15 }
+      } 
+    });
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     
     video.srcObject = stream;
     video.style.display = 'block';
     
+<<<<<<< HEAD
     // Wait for video to start with better error handling
     await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -182,6 +249,20 @@ async function startTracking() {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     console.log('Canvas setup:', canvas.width, 'x', canvas.height);
+=======
+    // Wait for video to start
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(reject);
+      };
+      video.onerror = reject;
+      setTimeout(() => reject(new Error('Video timeout')), 5000);
+    });
+    
+    // Down-sample the video frame for face detection to cut processing cost ~10x
+    canvas.width = Math.floor(video.videoWidth * DETECTION_SCALE);
+    canvas.height = Math.floor(video.videoHeight * DETECTION_SCALE);
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     
     // Reset tracking state
     isTracking = true;
@@ -199,6 +280,7 @@ async function startTracking() {
     updateStatus('Calibrating... Please look straight ahead and stay still.', 'loading');
     
     // Start detection loop
+<<<<<<< HEAD
     detectMovement();
     
   } catch (error) {
@@ -230,6 +312,15 @@ async function startTracking() {
       errorMsg += `Unknown error: ${error.message}`;
     }
     
+=======
+    startDetectionLoop();
+    
+  } catch (error) {
+    console.error('Camera error:', error);
+    const errorMsg = error.name === 'NotAllowedError' 
+      ? 'Camera access denied. Please allow camera access and try again.'
+      : 'Failed to access camera. Please check your camera and try again.';
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     updateStatus(errorMsg, 'error');
     stopTracking();
   }
@@ -240,10 +331,14 @@ function stopTracking() {
   
   // Stop camera
   if (stream) {
+<<<<<<< HEAD
     stream.getTracks().forEach(track => {
       console.log('Stopping track:', track.kind, track.label);
       track.stop();
     });
+=======
+    stream.getTracks().forEach(track => track.stop());
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     stream = null;
   }
   
@@ -255,7 +350,10 @@ function stopTracking() {
   
   // Reset UI
   video.style.display = 'none';
+<<<<<<< HEAD
   video.srcObject = null;
+=======
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
   startBtn.style.display = 'inline-block';
   stopBtn.style.display = 'none';
   startBtn.disabled = false;
@@ -263,6 +361,7 @@ function stopTracking() {
   updateStatus('Stopped. Click Start to begin tracking again.', 'ready');
 }
 
+<<<<<<< HEAD
 function detectMovement() {
   if (!isTracking || !video || video.readyState < 2) {
     if (isTracking) {
@@ -278,6 +377,61 @@ function detectMovement() {
     // Get image data
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const faceY = detectFacePosition(imageData.data, canvas.width, canvas.height);
+=======
+// ----------------------------------------------------------------------------------
+// Frame processing loop helpers
+function startDetectionLoop() {
+  if (hasRequestVideoFrameCallback) {
+    video.requestVideoFrameCallback(handleVideoFrame);
+  } else {
+    // Fallback for older browsers
+    detectMovement();
+  }
+}
+
+async function handleVideoFrame() {
+  await detectMovement();
+  if (isTracking) {
+    video.requestVideoFrameCallback(handleVideoFrame);
+  }
+}
+
+async function detectMovement() {
+  if (!isTracking) return;
+  
+  try {
+    let faceY = null;
+
+    // 1) Try the built-in FaceDetector API (GPU-accelerated, very fast)
+    if (faceDetector) {
+      try {
+        const faces = await faceDetector.detect(video);
+        if (faces.length > 0) {
+          const box = faces[0].boundingBox;
+          // Convert Y position (center of box) into the same coordinate system as the analysis canvas
+          faceY = (box.y + box.height / 2) * (canvas.height / video.videoHeight);
+        }
+      } catch (detErr) {
+        console.warn('FaceDetector detect() failed – falling back to manual detection.', detErr);
+        faceY = null;
+      }
+    }
+
+    // 2) Manual pixel-based fallback (runs on the down-sampled canvas)
+    if (faceY === null) {
+      // Draw current video frame to canvas (down-sampled)
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Try worker off-thread detection first (if available)
+      faceY = await detectFaceInWorker(imageData, canvas.width, canvas.height);
+
+      // If no worker available, fallback to synchronous detection on the main thread
+      if (faceY === null && !detectorWorker) {
+        faceY = detectFacePosition(imageData.data, canvas.width, canvas.height);
+      }
+    }
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     
     if (faceY !== null) {
       // Apply smoothing
@@ -353,16 +507,42 @@ function detectMovement() {
     updateStatus('Detection error. Please try again.', 'error');
   }
   
+<<<<<<< HEAD
   // Continue loop
   if (isTracking) {
+=======
+  // Continue loop only if we are using the rAF fallback.
+  if (isTracking && !hasRequestVideoFrameCallback) {
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
     animationId = requestAnimationFrame(detectMovement);
   }
 }
 
 function detectFacePosition(data, width, height) {
+<<<<<<< HEAD
   const regions = [];
   const regionSize = 30;
   const step = 15;
+=======
+  const regionSize = 30;
+  const step = 15;
+  const regionHalfSize = regionSize / 2;
+  
+  // Pre-calculate constants for filtering and scoring
+  const minBrightness = 60;
+  const maxBrightness = 220;
+  const minSkinToneRatio = 0.1;
+  const brightnessWeight = 0.7;
+  const skinToneWeight = 1000;
+  const distancePenalty = 0.1;
+  
+  // Pre-calculate center positions for distance calculations
+  const centerX = width / 2;
+  const centerY = height * 0.4; // Face usually in upper-middle
+  
+  let bestRegion = null;
+  let bestScore = -Infinity;
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
   
   // Analyze brightness in regions (focus on face area)
   for (let y = Math.floor(height * 0.15); y < height * 0.85; y += step) {
@@ -375,6 +555,7 @@ function detectFacePosition(data, width, height) {
       for (let dy = 0; dy < regionSize && y + dy < height; dy++) {
         for (let dx = 0; dx < regionSize && x + dx < width; dx++) {
           const pixelIndex = ((y + dy) * width + (x + dx)) * 4;
+<<<<<<< HEAD
           if (pixelIndex + 3 < data.length) {
             const r = data[pixelIndex];
             const g = data[pixelIndex + 1];
@@ -391,10 +572,26 @@ function detectFacePosition(data, width, height) {
                 Math.abs(r - g) > 15 && r > g && r > b) {
               skinToneCount++;
             }
+=======
+          const r = data[pixelIndex];
+          const g = data[pixelIndex + 1];
+          const b = data[pixelIndex + 2];
+          
+          // Calculate brightness (luma component)
+          totalBrightness += r * 0.299 + g * 0.587 + b * 0.114;
+          pixelCount++;
+          
+          // Check for skin-tone like colors
+          if (r > 95 && g > 40 && b > 20 && 
+              Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
+              Math.abs(r - g) > 15 && r > g && r > b) {
+            skinToneCount++;
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
           }
         }
       }
       
+<<<<<<< HEAD
       if (pixelCount > 0) {
         const avgBrightness = totalBrightness / pixelCount;
         const skinToneRatio = skinToneCount / pixelCount;
@@ -406,10 +603,34 @@ function detectFacePosition(data, width, height) {
           skinToneRatio: skinToneRatio,
           score: avgBrightness * 0.7 + skinToneRatio * 1000
         });
+=======
+      const avgBrightness = totalBrightness / pixelCount;
+      const skinToneRatio = skinToneCount / pixelCount;
+      
+      // Skip regions that don't meet face-like thresholds (inverted logic for reduced nesting)
+      if (avgBrightness <= minBrightness || avgBrightness >= maxBrightness || skinToneRatio <= minSkinToneRatio) {
+        continue;
+      }
+      
+      // Calculate position and score for this valid region
+      const regionX = x + regionHalfSize;
+      const regionY = y + regionHalfSize;
+      
+      // Use Math.hypot for efficient distance calculation
+      const distanceFromCenter = Math.hypot(regionX - centerX, regionY - centerY);
+      
+      // Combined score: face-like features minus distance penalty
+      const finalScore = (avgBrightness * brightnessWeight + skinToneRatio * skinToneWeight) - (distanceFromCenter * distancePenalty);
+      
+      if (finalScore > bestScore) {
+        bestScore = finalScore;
+        bestRegion = { y: regionY };
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
       }
     }
   }
   
+<<<<<<< HEAD
   // Find regions with face-like characteristics
   const faceRegions = regions.filter(region => 
     region.brightness > 60 && region.brightness < 220 && region.skinToneRatio > 0.1
@@ -441,6 +662,9 @@ function detectFacePosition(data, width, height) {
   }
   
   return bestRegion.y;
+=======
+  return bestRegion ? bestRegion.y : null;
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
 }
 
 async function executeScroll(scrollAmount) {
@@ -490,4 +714,8 @@ document.addEventListener('visibilitychange', () => {
     // Pause tracking when popup is hidden
     console.log('Popup hidden, pausing tracking');
   }
+<<<<<<< HEAD
 });
+=======
+});
+>>>>>>> 77ec8bb490b426a7c2ecf53fa435f90ef9c4aa22
