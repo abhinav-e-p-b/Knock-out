@@ -65,7 +65,7 @@ function detectFacePosition(data, width, height) {
       const avgBrightness = totalBrightness / pixelCount;
       const skinToneRatio = skinToneCount / pixelCount;
       
-      // Early exit optimization: skip regions that don't meet thresholds
+      // Skip regions that don't meet face-like thresholds (inverted logic for reduced nesting)
       if (
         avgBrightness <= MIN_BRIGHTNESS_THRESHOLD ||
         avgBrightness >= MAX_BRIGHTNESS_THRESHOLD ||

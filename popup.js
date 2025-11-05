@@ -364,7 +364,7 @@ function detectFacePosition(data, width, height) {
           const g = data[pixelIndex + 1];
           const b = data[pixelIndex + 2];
           
-          // Calculate brightness using standard luma coefficients
+          // Calculate brightness (luma component)
           totalBrightness += r * 0.299 + g * 0.587 + b * 0.114;
           pixelCount++;
           
@@ -380,7 +380,7 @@ function detectFacePosition(data, width, height) {
       const avgBrightness = totalBrightness / pixelCount;
       const skinToneRatio = skinToneCount / pixelCount;
       
-      // Filter regions during collection (early exit optimization)
+      // Skip regions that don't meet face-like thresholds (inverted logic for reduced nesting)
       if (avgBrightness <= minBrightness || avgBrightness >= maxBrightness || skinToneRatio <= minSkinToneRatio) {
         continue;
       }
