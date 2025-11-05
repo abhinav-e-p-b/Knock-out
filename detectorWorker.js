@@ -26,7 +26,15 @@ function detectFacePosition(data, width, height) {
   const BRIGHTNESS_SCORE_WEIGHT = 0.7;
   const SKIN_TONE_SCORE_WEIGHT = 1000;
 
-  const regions = [];
+  // Pre-calculate constants outside loop
+  const centerX = width / 2;
+  const centerY = height * EXPECTED_FACE_CENTER_Y_RATIO;
+  const regionHalfSize = FACE_REGION_SIZE_PX / 2;
+  
+  let bestScore = -Infinity;
+  let bestRegion = null;
+
+  // Process regions and track best score directly (avoid intermediate array)
   for (let y = Math.floor(height * FACE_SCAN_REGION_TOP_RATIO); y < height * FACE_SCAN_REGION_BOTTOM_RATIO; y += FACE_REGION_STEP_PX) {
     for (let x = Math.floor(width * FACE_SCAN_REGION_LEFT_RATIO); x < width * FACE_SCAN_REGION_RIGHT_RATIO; x += FACE_REGION_STEP_PX) {
       let totalBrightness = 0;
@@ -56,36 +64,30 @@ function detectFacePosition(data, width, height) {
       }
       const avgBrightness = totalBrightness / pixelCount;
       const skinToneRatio = skinToneCount / pixelCount;
+      
+      // Early exit optimization: skip regions that don't meet thresholds
       if (
-        avgBrightness > MIN_BRIGHTNESS_THRESHOLD &&
-        avgBrightness < MAX_BRIGHTNESS_THRESHOLD &&
-        skinToneRatio > MIN_SKIN_TONE_RATIO_THRESHOLD
+        avgBrightness <= MIN_BRIGHTNESS_THRESHOLD ||
+        avgBrightness >= MAX_BRIGHTNESS_THRESHOLD ||
+        skinToneRatio <= MIN_SKIN_TONE_RATIO_THRESHOLD
       ) {
-        regions.push({
-          x: x + FACE_REGION_SIZE_PX / 2,
-          y: y + FACE_REGION_SIZE_PX / 2,
-          brightness: avgBrightness,
-          skinToneRatio,
-        });
+        continue;
+      }
+      
+      // Calculate score immediately for valid regions (avoid storing intermediate data)
+      const regionX = x + regionHalfSize;
+      const regionY = y + regionHalfSize;
+      const score =
+        avgBrightness * BRIGHTNESS_SCORE_WEIGHT +
+        skinToneRatio * SKIN_TONE_SCORE_WEIGHT -
+        Math.hypot(regionX - centerX, regionY - centerY) * DISTANCE_PENALTY_FACTOR;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestRegion = { y: regionY };
       }
     }
   }
-
-  if (regions.length === 0) return null;
-
-  const centerX = width / 2;
-  const centerY = height * EXPECTED_FACE_CENTER_Y_RATIO;
-  let bestScore = -Infinity;
-  let bestRegion = null;
-  for (const region of regions) {
-    const score =
-      region.brightness * BRIGHTNESS_SCORE_WEIGHT +
-      region.skinToneRatio * SKIN_TONE_SCORE_WEIGHT -
-      Math.hypot(region.x - centerX, region.y - centerY) * DISTANCE_PENALTY_FACTOR;
-    if (score > bestScore) {
-      bestScore = score;
-      bestRegion = region;
-    }
-  }
+  
   return bestRegion ? bestRegion.y : null;
 }
