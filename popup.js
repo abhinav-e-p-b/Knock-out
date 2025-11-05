@@ -330,9 +330,24 @@ async function detectMovement() {
 }
 
 function detectFacePosition(data, width, height) {
-  const regions = [];
   const regionSize = 30;
   const step = 15;
+  const regionHalfSize = regionSize / 2;
+  
+  // Pre-calculate constants for filtering and scoring
+  const minBrightness = 60;
+  const maxBrightness = 220;
+  const minSkinToneRatio = 0.1;
+  const brightnessWeight = 0.7;
+  const skinToneWeight = 1000;
+  const distancePenalty = 0.1;
+  
+  // Pre-calculate center positions for distance calculations
+  const centerX = width / 2;
+  const centerY = height * 0.4; // Face usually in upper-middle
+  
+  let bestRegion = null;
+  let bestScore = -Infinity;
   
   // Analyze brightness in regions (focus on face area)
   for (let y = Math.floor(height * 0.15); y < height * 0.85; y += step) {
@@ -349,9 +364,8 @@ function detectFacePosition(data, width, height) {
           const g = data[pixelIndex + 1];
           const b = data[pixelIndex + 2];
           
-          // Calculate brightness
-          const brightness = (r * 0.299 + g * 0.587 + b * 0.114);
-          totalBrightness += brightness;
+          // Calculate brightness using standard luma coefficients
+          totalBrightness += r * 0.299 + g * 0.587 + b * 0.114;
           pixelCount++;
           
           // Check for skin-tone like colors
@@ -366,47 +380,29 @@ function detectFacePosition(data, width, height) {
       const avgBrightness = totalBrightness / pixelCount;
       const skinToneRatio = skinToneCount / pixelCount;
       
-      regions.push({
-        x: x + regionSize / 2,
-        y: y + regionSize / 2,
-        brightness: avgBrightness,
-        skinToneRatio: skinToneRatio,
-        score: avgBrightness * 0.7 + skinToneRatio * 1000
-      });
+      // Filter regions during collection (early exit optimization)
+      if (avgBrightness <= minBrightness || avgBrightness >= maxBrightness || skinToneRatio <= minSkinToneRatio) {
+        continue;
+      }
+      
+      // Calculate position and score for this valid region
+      const regionX = x + regionHalfSize;
+      const regionY = y + regionHalfSize;
+      
+      // Use Math.hypot for efficient distance calculation
+      const distanceFromCenter = Math.hypot(regionX - centerX, regionY - centerY);
+      
+      // Combined score: face-like features minus distance penalty
+      const finalScore = (avgBrightness * brightnessWeight + skinToneRatio * skinToneWeight) - (distanceFromCenter * distancePenalty);
+      
+      if (finalScore > bestScore) {
+        bestScore = finalScore;
+        bestRegion = { y: regionY };
+      }
     }
   }
   
-  // Find regions with face-like characteristics
-  const faceRegions = regions.filter(region => 
-    region.brightness > 60 && region.brightness < 220 && region.skinToneRatio > 0.1
-  );
-  
-  if (faceRegions.length === 0) {
-    return null;
-  }
-  
-  // Find the best region (highest score, most central)
-  const centerX = width / 2;
-  const centerY = height * 0.4; // Face usually in upper-middle
-  
-  let bestRegion = faceRegions[0];
-  let bestScore = -Infinity;
-  
-  for (const region of faceRegions) {
-    const distanceFromCenter = Math.sqrt(
-      Math.pow(region.x - centerX, 2) + Math.pow(region.y - centerY, 2)
-    );
-    
-    // Combined score: face-like features minus distance penalty
-    const finalScore = region.score - (distanceFromCenter * 0.1);
-    
-    if (finalScore > bestScore) {
-      bestScore = finalScore;
-      bestRegion = region;
-    }
-  }
-  
-  return bestRegion.y;
+  return bestRegion ? bestRegion.y : null;
 }
 
 async function executeScroll(scrollAmount) {
